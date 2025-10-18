@@ -22,9 +22,9 @@ from Model.Model import Model
 
 class Wrapper(Model, ABC):
     @abstractmethod
-    def fwd(self, name: str, layer: int, num_batches: int) -> List[ChakraNode]:
+    def fwd(self, name: str, npu_id: int, layer: int, num_batches: int) -> List[ChakraNode]:
         pass
 
     @abstractmethod
-    def bckwd(self, name: str, layer: int, num_batches: int) -> List[ChakraNode]:
+    def bckwd(self, name: str, npu_id: int, layer: int, num_batches: int) -> List[ChakraNode]:
         pass

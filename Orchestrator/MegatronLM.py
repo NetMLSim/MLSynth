@@ -60,18 +60,18 @@ class MegatronLM(Orchestrator):
 
     def exec(self) -> dict:
         num_params = self.model.num_params
-        B = self.model.batch_size
-        S = self.model.sequence_len
-        d = self.model.hidden_size
-        b = self.model.bytes_per_val
+        B = self.model.get_batch_size()
+        S = self.model.get_sequence_len()
+        d = self.model.get_hidden_size()
+        b = self.model.get_bytes_per_val()
 
-        layers_per_pipeline_stage = self.model.num_layers // self.pp_size
+        layers_per_pipeline_stage = self.model.get_num_layers() // self.pp_size
         pp_comm_size = int((B*S*d*b * self.scale) / self.num_microbatches)
-        dp_comm_size = int(self.scale * num_params * 2 / self.tp_size / self.pp_size) // 10
+        dp_comm_size = int(self.scale * num_params * b / self.tp_size / self.pp_size)
 
-        #print(f"Num params: {num_params:,.2f}")
-        #print(f"Pipeline comm size: {pp_comm_size / 1024 / 1024:,.2f} MB")
-        #print(f"DP comm size: {dp_comm_size / 1024 / 1024 / 1024:,.2f} GB")
+        # print(f"Num params: {num_params:,.2f}")
+        # print(f"Pipeline comm size: {pp_comm_size / 1024 / 1024:,.2f} MB")
+        # print(f"DP comm size: {dp_comm_size / 1024 / 1024 / 1024:,.2f} GB")
 
         nodes = defaultdict(list)
 
@@ -92,13 +92,13 @@ class MegatronLM(Orchestrator):
                         rcv_node = None
                         if pp_stage != 0 and self.pp_size > 1:
                             #print(f"RCV ({npu_id - tp_size} -> {npu_id})")
-                            rcv_node = receive(npu_id - self.tp_size, npu_id, pp_comm_size, parents=[prev_rcv], name=f"COMM_RECV_NODE_FWD_b{b}")
+                            rcv_node = receive(npu_id - self.tp_size, npu_id, pp_comm_size, parents=[prev_rcv], name=f"COMM_RECV_NODE_FWD_b{b}_dp{dp_group}pp{pp_stage}tp{tp_shard}")
                             nodes[npu_id].append(rcv_node)
                             prev_rcv = rcv_node
                         
                         for layer in range(layers_per_pipeline_stage):
                             current_layer = pp_stage * layers_per_pipeline_stage + layer
-                            cmp_nodes = self.model.fwd(name=f"COMP_NODE_FWD_b{b}", layer=current_layer, num_batches=self.num_microbatches, pg_name=f"tp_{tp_group}")
+                            cmp_nodes = self.model.fwd(name=f"COMP_NODE_FWD_b{b}", npu_id=npu_id, layer=current_layer, num_batches=B/self.num_microbatches, pg_name=f"tp_{tp_group}")
                             if layer == 0:
                                 add_dependencies(cmp_nodes[0], [rcv_node, prev_comp])
                             else:
@@ -109,7 +109,7 @@ class MegatronLM(Orchestrator):
                         
                         if pp_stage != self.pp_size - 1 and self.pp_size > 1:
                             #print(f"SND ({npu_id} -> {npu_id + tp_size})")
-                            snd_node = send(npu_id, npu_id + self.tp_size, pp_comm_size, parents=[prev_comp], name=f"COMM_SEND_NODE_FWD_b{b}")
+                            snd_node = send(npu_id, npu_id + self.tp_size, pp_comm_size, parents=[prev_comp], name=f"COMM_SEND_NODE_FWD_b{b}_dp{dp_group}pp{pp_stage}tp{tp_shard}")
                             nodes[npu_id].append(snd_node)                
                     # -------------
                     # Backward pass
@@ -119,13 +119,13 @@ class MegatronLM(Orchestrator):
                         bck_rcv_node = None
                         if pp_stage != self.pp_size - 1 and self.pp_size > 1:
                             #print(f"RCV ({npu_id + tp_size} -> {npu_id})")
-                            bck_rcv_node = receive(npu_id + self.tp_size, npu_id, pp_comm_size, parents=[prev_rcv], name=f"COMM_RECV_NODE_BCKWD_b{b}")
+                            bck_rcv_node = receive(npu_id + self.tp_size, npu_id, pp_comm_size, parents=[prev_rcv], name=f"COMM_RECV_NODE_BCKWD_b{b}_dp{dp_group}pp{pp_stage}tp{tp_shard}")
                             nodes[npu_id].append(bck_rcv_node)
                             prev_rcv = bck_rcv_node
                         
                         for layer in range(layers_per_pipeline_stage):
                             current_layer = pp_stage * layers_per_pipeline_stage + layer
-                            bck_cmp_nodes = self.model.bckwd(name=f"COMP_NODE_BCKWD_b{b}", layer=current_layer, num_batches=self.num_microbatches, pg_name=f"tp_{tp_group}")
+                            bck_cmp_nodes = self.model.bckwd(name=f"COMP_NODE_BCKWD_b{b}", npu_id=npu_id, layer=current_layer, num_batches=B/self.num_microbatches, pg_name=f"tp_{tp_group}")
                             if layer == 0:
                                 add_dependencies(bck_cmp_nodes[0], [bck_rcv_node, prev_comp])
                             else:
@@ -137,12 +137,12 @@ class MegatronLM(Orchestrator):
                         
                         if pp_stage != 0 and self.pp_size > 1:
                             #print(f"SND ({npu_id} -> {npu_id - tp_size})")
-                            bck_snd_node = send(npu_id, npu_id - self.tp_size, pp_comm_size, parents=[prev_comp], name=f"COMM_SEND_NODE_BCKWD_b{b}")
+                            bck_snd_node = send(npu_id, npu_id - self.tp_size, pp_comm_size, parents=[prev_comp], name=f"COMM_SEND_NODE_BCKWD_b{b}_dp{dp_group}pp{pp_stage}tp{tp_shard}")
                             nodes[npu_id].append(bck_snd_node)
 
                     if self.dp_size > 1:
                         pp_name = "" if self.pp_size <= 1 else f"pp_{pp_stage}"
                         tp_name = "" if self.tp_size <= 1 else f"_tp_{tp_shard}"
-                        dp_comm_node = allreduce(dp_comm_size, parents=[prev_comp], pg_name=f"{pp_name}{tp_name}")
+                        dp_comm_node = allreduce(dp_comm_size, parents=[prev_comp], pg_name=f"{pp_name}{tp_name}", name=f"COMM_COLL_NODE_DP_All-Reduce_dp{dp_group}pp{pp_stage}tp{tp_shard}")
                         nodes[npu_id].append(dp_comm_node)
         return nodes

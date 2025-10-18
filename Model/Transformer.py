@@ -50,8 +50,41 @@ class Transformer(Model):
                 bytes_per_val=self.bytes_per_val,
                 scale=self.scale)) for i in range(self.num_layers)]
     
-    def fwd(self, name, layer, num_batches, pg_name=None) -> list[ChakraNode]:
+    def fwd(self, name, npu_id, layer, num_batches, pg_name=None) -> list[ChakraNode]:
         return self.layers[layer].fwd(name=name, num_batches=num_batches, pg_name=pg_name)
     
-    def bckwd(self, name, layer, num_batches, pg_name=None) -> list[ChakraNode]:
+    def bckwd(self, name, npu_id, layer, num_batches, pg_name=None) -> list[ChakraNode]:
         return self.layers[layer].bckwd(name=name, num_batches=num_batches, pg_name=pg_name)
+    
+    def get_num_params(self) -> int:
+        return self.num_params
+    
+    def get_num_layers(self) -> int:
+        return self.num_layers
+
+    def get_name(self) -> str:
+        return self.name
+
+    def get_hidden_size(self) -> int:
+        return self.hidden_size
+
+    def get_sequence_len(self) -> int:
+        return self.sequence_len
+
+    def get_vocab_size(self) -> int:
+        return self.vocab_size
+
+    def get_batch_size(self) -> int:
+        return self.batch_size
+
+    def get_bytes_per_val(self) -> int:
+        return self.bytes_per_val
+
+    def get_tp_size(self) -> int:
+        return self.tp_size
+
+    def get_scale(self) -> float:
+        return self.scale
+
+    def get_layers(self) -> list[TransformerLayer]:
+        return self.layers

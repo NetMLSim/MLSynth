@@ -59,8 +59,7 @@ def main(argv: list[str] | None = None) -> int:
 
     validate_config(cfg)
 
-    #name = f"{cfg["model"]["name"]}_{cfg["parallelism"]["dp_size"]}dp_{cfg["parallelism"]["pp_size"]}pp_{cfg["parallelism"]["tp_size"]}tp_{cfg["model"]["batch_size"]}B_{cfg["model"]["sequence_len"]}S_{cfg["model"]["vocab_size"]}V_{cfg["model"]["hidden_size"]}d_{cfg["model"]["bytes_per_val"]}b_{int(cfg["model"]["scale"]*100)}scale"
-    name = f"mlsynth_test"
+    name = f"{cfg["model"]["name"]}_{cfg["parallelism"]["dp_size"]}dp_{cfg["parallelism"]["pp_size"]}pp_{cfg["parallelism"]["tp_size"]}tp_{cfg["model"]["batch_size"]}B_{cfg["model"]["sequence_len"]}S_{cfg["model"]["vocab_size"]}V_{cfg["model"]["hidden_size"]}d_{cfg["model"]["bytes_per_val"]}b_{int(cfg["model"]["scale"]*100)}scale"
     os.makedirs(f"output", exist_ok=True)
     # make name directory
     os.makedirs(f"output/{name}", exist_ok=True)

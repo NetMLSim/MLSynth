@@ -27,11 +27,11 @@ class Model(ABC):
     """
     
     @abstractmethod
-    def fwd(self, name: str, layer: int, num_batches: int) -> List[ChakraNode]:
+    def fwd(self, name: str, npu_id: int, layer: int, num_batches: int) -> List[ChakraNode]:
         """Return forward-pass operations for the given layer and microbatch count."""
         raise NotImplementedError
     
     @abstractmethod
-    def bckwd(self, name: str, layer: int, num_batches: int) -> List[ChakraNode]:
+    def bckwd(self, name: str, npu_id: int, layer: int, num_batches: int) -> List[ChakraNode]:
         """Return backward-pass operations for the given layer and microbatch count."""
         raise NotImplementedError

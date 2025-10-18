@@ -7,9 +7,28 @@ model:
   batch_size: 32
   num_microbatches: 8
   bytes_per_val: 2
-  scale: 0.01
+  scale: 1
 
 parallelism:
   dp_size: 2
   pp_size: 2
   tp_size: 1
+
+wrapper:
+  type: "compute"
+  seed: 42
+  conditions:
+    - condition:
+      npu_id: 0
+      pass: forward
+      slowdown:
+        type: "constant"
+        value: 0.1
+    - condition:
+      npu_id_range: [1, 2]
+      layer_id_range: [4, 5]
+      slowdown:
+        type: "random"
+        distribution: "normal"
+        mean: 0.2
+        std: 0.1
