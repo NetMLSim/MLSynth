@@ -75,26 +75,26 @@ class TransformerLayer(Layer):
     def bckwd(self, name="node_bckwd", pg_name=None, num_batches=1) -> list[ChakraNode]:
         tensor_size = int((12*self.hidden_size*self.hidden_size*self.bytes_per_val + num_batches*self.sequence_len*self.hidden_size*self.bytes_per_val) * self.scale)
 
-        # calculate flops for the attention block
-        attention_flops = int(self.scale * (8 * num_batches*self.sequence_len*self.hidden_size*self.hidden_size + 4*num_batches*self.sequence_len*self.sequence_len*self.hidden_size))
-        attention_compute = compute(2 * attention_flops, tensor_size=tensor_size, name=f"{name}_attention_compute")
-        
-        # tensor parallel allreduce
-        attention_allreduce = None
-        if self.tp_size > 1:
-            tp_comm_size = int(self.scale * self.bytes_per_val * self.sequence_len * num_batches * self.hidden_size)
-            attention_allreduce = allreduce(tp_comm_size, pg_name=pg_name, parents=[attention_compute], name=f"{name}_attention_allreduce")
-        
         # calculate flops for the mlp block
         ffwd_flops = int(self.scale * 16 * num_batches*self.sequence_len*self.hidden_size*self.hidden_size)
-        ffwd_parent = [attention_allreduce] if attention_allreduce else [attention_compute]
-        ffwd_compute = compute(2 * ffwd_flops, tensor_size, parents=ffwd_parent, name=f"{name}_ffwd_compute")
+        ffwd_compute = compute(2 * ffwd_flops, tensor_size, name=f"{name}_ffwd_compute")
 
         # tensor parallel allreduce
         ffwd_allreduce = None
         if self.tp_size > 1:
             tp_comm_size = int(self.scale * self.bytes_per_val * self.sequence_len * num_batches * self.hidden_size)
             ffwd_allreduce = allreduce(tp_comm_size, pg_name=pg_name, parents=[ffwd_compute], name=f"{name}_mlp_allreduce")
+
+        # calculate flops for the attention block
+        attention_flops = int(self.scale * (8 * num_batches*self.sequence_len*self.hidden_size*self.hidden_size + 4*num_batches*self.sequence_len*self.sequence_len*self.hidden_size))
+        attention_parent = [ffwd_allreduce] if ffwd_allreduce else [ffwd_compute]
+        attention_compute = compute(2 * attention_flops, tensor_size=tensor_size, parents=attention_parent, name=f"{name}_attention_compute")
+        
+        # tensor parallel allreduce
+        attention_allreduce = None
+        if self.tp_size > 1:
+            tp_comm_size = int(self.scale * self.bytes_per_val * self.sequence_len * num_batches * self.hidden_size)
+            attention_allreduce = allreduce(tp_comm_size, pg_name=pg_name, parents=[attention_compute], name=f"{name}_attention_allreduce")
 
         nodes: list[ChakraNode] = [ffwd_compute]
         if ffwd_allreduce is not None:
