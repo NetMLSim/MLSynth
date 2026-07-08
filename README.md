@@ -28,7 +28,7 @@ Outputs will be written under `output/<auto-name>/`.
 | hidden_size   | int  | Model hidden dimension |
 | sequence_len  | int  | Sequence length |
 | vocab_size    | int  | Vocabulary size |
-| batch_size    | int  | Global batch size |
+| batch_size    | int  | Batch size per DP group |
 | num_microbatches | int | Microbatches per batch (pipeline) |
 | bytes_per_val | int  | Bytes per tensor element (e.g., 2 for fp16) |
 | scale         | float| Global scaling for compute/communication |
