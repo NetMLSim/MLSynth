@@ -56,6 +56,23 @@ class MegatronLM(Orchestrator):
                     npu_id = base + npu
                     tp_comm_group.append(npu_id)
                 comm_groups[f"tp_{tp_group}"] = tp_comm_group
+
+        # generate comm groups for expert-parallel and expert-data-parallel
+        if getattr(self.model, "is_moe", False) and self.model.get_ep_size() > 1:
+            ep_size = self.model.get_ep_size()
+            edp_size = self.model.get_edp_size()
+            pp_tp = self.pp_size * self.tp_size
+            for pp_stage in range(self.pp_size):
+                for tp_shard in range(self.tp_size):
+                    def gid(dpg, _pp=pp_stage, _tp=tp_shard):
+                        return dpg * pp_tp + _pp * self.tp_size + _tp
+                    for ep_block in range(edp_size):
+                        comm_groups[f"ep_{pp_stage}_{tp_shard}_{ep_block}"] = [
+                            gid(ep_block * ep_size + r) for r in range(ep_size)]
+                    if edp_size > 1:
+                        for ep_local in range(ep_size):
+                            comm_groups[f"edp_{pp_stage}_{tp_shard}_{ep_local}"] = [
+                                gid(g * ep_size + ep_local) for g in range(edp_size)]
         return comm_groups
 
     def exec(self) -> dict:
@@ -143,6 +160,18 @@ class MegatronLM(Orchestrator):
                     if self.dp_size > 1:
                         pp_name = "" if self.pp_size <= 1 else f"pp_{pp_stage}"
                         tp_name = "" if self.tp_size <= 1 else f"_tp_{tp_shard}"
-                        dp_comm_node = allreduce(dp_comm_size, parents=[prev_comp], pg_name=f"{pp_name}{tp_name}", name=f"COMM_COLL_NODE_DP_All-Reduce_dp{dp_group}pp{pp_stage}tp{tp_shard}")
-                        nodes[npu_id].append(dp_comm_node)
+                        if getattr(self.model, "is_moe", False):
+                            # dense grads over DP; expert grads over EDP replicas
+                            bpv = self.model.get_bytes_per_val()
+                            dense_dp_size = int(self.scale * self.model.get_dense_params() * bpv / self.tp_size / self.pp_size)
+                            dp_comm_node = allreduce(dense_dp_size, parents=[prev_comp], pg_name=f"{pp_name}{tp_name}", name=f"COMM_COLL_NODE_DP_All-Reduce_dp{dp_group}pp{pp_stage}tp{tp_shard}")
+                            nodes[npu_id].append(dp_comm_node)
+                            if self.model.get_ep_size() > 1 and self.model.get_edp_size() > 1:
+                                ep_local = dp_group % self.model.get_ep_size()
+                                expert_edp_size = int(self.scale * (self.model.get_expert_params() / self.model.get_ep_size()) * bpv / self.tp_size / self.pp_size)
+                                edp_comm_node = allreduce(expert_edp_size, parents=[dp_comm_node], pg_name=f"edp_{pp_stage}_{tp_shard}_{ep_local}", name=f"COMM_COLL_NODE_EDP_All-Reduce_dp{dp_group}pp{pp_stage}tp{tp_shard}")
+                                nodes[npu_id].append(edp_comm_node)
+                        else:
+                            dp_comm_node = allreduce(dp_comm_size, parents=[prev_comp], pg_name=f"{pp_name}{tp_name}", name=f"COMM_COLL_NODE_DP_All-Reduce_dp{dp_group}pp{pp_stage}tp{tp_shard}")
+                            nodes[npu_id].append(dp_comm_node)
         return nodes

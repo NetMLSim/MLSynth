@@ -51,26 +51,26 @@ def compute(flops: int, tensor_size: int, parents: Optional[List[ChakraNode]] = 
                 node.data_deps.append(parent.id)
     return node
 
-def send(sender, receiver, size, name="COMM_SEND_NODE", parents: Optional[List[ChakraNode]] = None):    
+def send(sender, receiver, size, name="COMM_SEND_NODE", parents: Optional[List[ChakraNode]] = None, tag: int = 0):    
     node = get_node(name, COMM_SEND_NODE)
     node.attr.append(ChakraAttr(name="is_cpu_op", bool_val=False))
     node.attr.append(ChakraAttr(name="comm_size", int64_val=size))
     node.attr.append(ChakraAttr(name="comm_src", int32_val=sender))
     node.attr.append(ChakraAttr(name="comm_dst", int32_val=receiver))
-    node.attr.append(ChakraAttr(name="comm_tag", int32_val=0))
+    node.attr.append(ChakraAttr(name="comm_tag", int32_val=tag))
     if parents:
         for parent in parents:
             if parent:
                 node.data_deps.append(parent.id)
     return node
 
-def receive(sender, receiver, size, name="COMM_RECV_NODE", parents: Optional[List[ChakraNode]] = None):    
+def receive(sender, receiver, size, name="COMM_RECV_NODE", parents: Optional[List[ChakraNode]] = None, tag: int = 0):    
     node = get_node(name, COMM_RECV_NODE)
     node.attr.append(ChakraAttr(name="is_cpu_op", bool_val=False))
     node.attr.append(ChakraAttr(name="comm_size", int64_val=size))
     node.attr.append(ChakraAttr(name="comm_src", int32_val=sender))
     node.attr.append(ChakraAttr(name="comm_dst", int32_val=receiver))
-    node.attr.append(ChakraAttr(name="comm_tag", int32_val=0))
+    node.attr.append(ChakraAttr(name="comm_tag", int32_val=tag))
     if parents:
         for parent in parents:
             if parent:
