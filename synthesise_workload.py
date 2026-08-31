@@ -26,8 +26,19 @@ import argparse
 from Wrapper.ComputeWrapper import ComputeWrapper
 from Orchestrator.MegatronLM import MegatronLM
 from Model.Transformer import Transformer
+from Model.TransformerMoe import TransformerMoe
 from chakra.src.third_party.utils.protolib import encodeMessage as encode_message
 import yaml
+
+
+MOE_MODEL_NAMES = {"transformer_moe", "moe", "transformermoe"}
+
+
+def is_moe_config(cfg) -> bool:
+    """True if the config selects a MoE model."""
+    if "moe" in cfg and cfg["moe"]:
+        return True
+    return str(cfg["model"].get("name", "")).lower() in MOE_MODEL_NAMES
 
 
 def write_comm_groups(comm_groups, path=""):
@@ -48,6 +59,24 @@ def validate_config(cfg):
     if batch_size < cfg["model"]["num_microbatches"]:
         raise ValueError(f"num batches (batch_size={cfg['model']['batch_size']}) must be greater than num microbatches (num_microbatches={cfg['model']['num_microbatches']})!")
 
+    if is_moe_config(cfg):
+        moe = cfg.get("moe", {}) or {}
+        ep_size = int(moe.get("ep_size", 1))
+        num_experts = int(moe.get("num_experts", 1))
+        top_k = int(moe.get("top_k", 1))
+        dp_size = cfg["parallelism"]["dp_size"]
+        if ep_size < 1:
+            raise ValueError(f"moe.ep_size must be >= 1 (got {ep_size})")
+        if dp_size % ep_size != 0:
+            raise ValueError(f"dp_size ({dp_size}) must be divisible by moe.ep_size ({ep_size})!")
+        if top_k < 1:
+            raise ValueError(f"moe.top_k must be >= 1 (got {top_k})")
+        strategy = str((moe.get("placement", {}) or {}).get("strategy", "contiguous"))
+        if strategy != "custom" and num_experts % ep_size != 0:
+            raise ValueError(
+                f"num_experts ({num_experts}) must be divisible by moe.ep_size ({ep_size}) "
+                f"for placement strategy '{strategy}'; use placement.strategy='custom' otherwise")
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Synthesize workload from YAML config")
@@ -65,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
     os.makedirs(f"output/{name}", exist_ok=True)
     os.makedirs(f"output/{name}/et", exist_ok=True)
 
-    model = Transformer(cfg)
+    model = TransformerMoe(cfg) if is_moe_config(cfg) else Transformer(cfg)
     if "wrapper" in cfg:
         model = ComputeWrapper(model, cfg)
     orchestrator = MegatronLM(model, cfg)

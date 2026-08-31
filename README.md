@@ -23,7 +23,7 @@ Outputs will be written under `output/<auto-name>/`.
 
 | Parameter     | Type | Description |
 |:--------------|:----:|:-----------:|
-| model         | str  | Model name (e.g., `transformer`) |
+| model         | str  | Model name (`transformer` or `transformer_moe`) |
 | num_layers    | int  | Number of layers |
 | hidden_size   | int  | Model hidden dimension |
 | sequence_len  | int  | Sequence length |
@@ -35,6 +35,16 @@ Outputs will be written under `output/<auto-name>/`.
 | parallelism.dp_size | int | Data parallel degree |
 | parallelism.pp_size | int | Pipeline parallel stages |
 | parallelism.tp_size | int | Tensor parallel degree |
+| moe.num_experts | int | Total number of experts |
+| moe.ep_size | int | Expert parallel degree (must divide `dp_size`) |
+| moe.top_k | int | Experts each token is routed to |
+| moe.capacity_factor | float | Per-expert capacity multiplier |
+| moe.drop_tokens | bool | Drop tokens that exceed expert capacity |
+| moe.a2a_mode | str | `pairwise` (per-pair send/recv) or `collective` |
+| moe.seed | int | RNG seed for routing |
+| moe.resample | str | `per_microbatch`, `per_layer`, or `fixed` |
+| moe.distribution.type | str | `uniform`, `dirichlet`, `explicit`, or `lognormal` |
+| moe.placement.strategy | str | `contiguous`, `round_robin`, or `custom` |
 
 ### Example
 
@@ -56,6 +66,23 @@ parallelism:
 ```
 
 A communication group file will also be generated. This must be passed into ASTRA-sim to define which gpus belong to each collective.
+
+## Mixture-of-Experts (MoE)
+
+Set `model.name: "transformer_moe"` or add a `moe:` block (see `input-moe.yaml`). Expert parallelism is taken from the data-parallel ranks, so `dp_size` must be divisible by `moe.ep_size`. Dispatch/combine uses per-pair send/recv by default (`a2a_mode: pairwise`); `collective` emits a single all-to-all.
+
+```yaml
+moe:
+  num_experts: 8
+  ep_size: 2
+  top_k: 1
+  a2a_mode: "pairwise"
+  distribution:
+    type: "dirichlet"
+    alpha: 0.5
+  placement:
+    strategy: "contiguous"
+```
 
 ## Implementing your own model
 

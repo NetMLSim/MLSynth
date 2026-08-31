@@ -1,0 +1,30 @@
+model:
+  name: "transformer_moe"
+  num_layers: 24
+  sequence_len: 2048
+  vocab_size: 51200
+  hidden_size: 20480
+  batch_size: 32
+  num_microbatches: 8
+  bytes_per_val: 2
+  scale: 1
+
+parallelism:
+  dp_size: 2
+  pp_size: 2
+  tp_size: 1
+
+moe:
+  num_experts: 8
+  ep_size: 2
+  top_k: 1
+  capacity_factor: 1.25
+  drop_tokens: true
+  a2a_mode: "pairwise"
+  seed: 123
+  resample: "per_microbatch"
+  distribution:
+    type: "dirichlet"
+    alpha: 0.5
+  placement:
+    strategy: "contiguous"

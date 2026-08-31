@@ -29,6 +29,7 @@ class ComputeWrapper(Wrapper):
     def __init__(self, model, config):
         self.model = model
         self.num_params = model.num_params
+        self.is_moe = getattr(model, "is_moe", False)
 
         self.conditions = config["wrapper"]["conditions"]
         # npu_id -> slowdown
@@ -110,3 +111,10 @@ class ComputeWrapper(Wrapper):
 
     def get_bytes_per_val(self) -> int:
         return self.model.get_bytes_per_val()
+
+    def __getattr__(self, name):
+        # delegate remaining getters (e.g. MoE-only) to the wrapped model
+        model = self.__dict__.get("model")
+        if model is None:
+            raise AttributeError(name)
+        return getattr(model, name)
