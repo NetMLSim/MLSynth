@@ -18,6 +18,7 @@ import os
 import sys
 from pathlib import Path
 import argparse
+import copy
 
 # Ensure local imports work without modifying system-wide settings
 #PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -43,10 +44,35 @@ def write_nodes(nodes, name, path=""):
 def validate_config(cfg):
     if cfg["model"]["batch_size"] < cfg["parallelism"]["dp_size"]:
         raise ValueError(f"num batches (batch_size={cfg['model']['batch_size']}) must be greater than num dp groups (dp_size={cfg['parallelism']['dp_size']})!")
+    if cfg["model"]["batch_size"] % cfg["parallelism"]["dp_size"] != 0:
+        raise ValueError(f"global batch_size={cfg['model']['batch_size']} must divide evenly across dp_size={cfg['parallelism']['dp_size']}!")
     batch_size = cfg["model"]["batch_size"] // cfg["parallelism"]["dp_size"]
 
     if batch_size < cfg["model"]["num_microbatches"]:
         raise ValueError(f"num batches (batch_size={cfg['model']['batch_size']}) must be greater than num microbatches (num_microbatches={cfg['model']['num_microbatches']})!")
+    if cfg["model"]["num_layers"] % cfg["parallelism"]["pp_size"] != 0:
+        raise ValueError(f"num_layers={cfg['model']['num_layers']} must divide evenly across pp_size={cfg['parallelism']['pp_size']}!")
+
+
+def build_output_name(cfg):
+    model = cfg["model"]
+    parallelism = cfg["parallelism"]
+    scale = int(model["scale"] * 100)
+    return (
+        f'{model["name"]}_{parallelism["dp_size"]}dp_'
+        f'{parallelism["pp_size"]}pp_{parallelism["tp_size"]}tp_'
+        f'{model["batch_size"]}B_{model["sequence_len"]}S_'
+        f'{model["vocab_size"]}V_{model["hidden_size"]}d_'
+        f'{model["bytes_per_val"]}b_{scale}scale'
+    )
+
+
+def model_config_for_rank(cfg):
+    model_cfg = copy.deepcopy(cfg)
+    model_cfg["model"]["batch_size"] = (
+        cfg["model"]["batch_size"] // cfg["parallelism"]["dp_size"]
+    )
+    return model_cfg
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -59,13 +85,13 @@ def main(argv: list[str] | None = None) -> int:
 
     validate_config(cfg)
 
-    name = f"{cfg["model"]["name"]}_{cfg["parallelism"]["dp_size"]}dp_{cfg["parallelism"]["pp_size"]}pp_{cfg["parallelism"]["tp_size"]}tp_{cfg["model"]["batch_size"]}B_{cfg["model"]["sequence_len"]}S_{cfg["model"]["vocab_size"]}V_{cfg["model"]["hidden_size"]}d_{cfg["model"]["bytes_per_val"]}b_{int(cfg["model"]["scale"]*100)}scale"
+    name = build_output_name(cfg)
     os.makedirs(f"output", exist_ok=True)
     # make name directory
     os.makedirs(f"output/{name}", exist_ok=True)
     os.makedirs(f"output/{name}/et", exist_ok=True)
 
-    model = Transformer(cfg)
+    model = Transformer(model_config_for_rank(cfg))
     if "wrapper" in cfg:
         model = ComputeWrapper(model, cfg)
     orchestrator = MegatronLM(model, cfg)

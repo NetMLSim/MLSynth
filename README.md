@@ -14,7 +14,7 @@ MLSynth is a tool to synthesise machine learning workloads to use in simulations
 Generate a Chakra execution trace from a YAML config:
 
 ```bash
-python .synthesise_workload.py
+python synthesise_workload.py
 ```
 
 Outputs will be written under `output/<auto-name>/`.
@@ -28,13 +28,18 @@ Outputs will be written under `output/<auto-name>/`.
 | hidden_size   | int  | Model hidden dimension |
 | sequence_len  | int  | Sequence length |
 | vocab_size    | int  | Vocabulary size |
-| batch_size    | int  | Batch size per DP group |
+| batch_size    | int  | Global batch size, split across DP groups |
 | num_microbatches | int | Microbatches per batch (pipeline) |
 | bytes_per_val | int  | Bytes per tensor element (e.g., 2 for fp16) |
 | scale         | float| Global scaling for compute/communication |
 | parallelism.dp_size | int | Data parallel degree |
 | parallelism.pp_size | int | Pipeline parallel stages |
 | parallelism.tp_size | int | Tensor parallel degree |
+
+Per-rank compute and pipeline communication use `batch_size //
+parallelism.dp_size`, so `batch_size` must divide evenly by
+`parallelism.dp_size`. `num_layers` must also divide evenly by
+`parallelism.pp_size`.
 
 ### Example
 
@@ -56,6 +61,10 @@ parallelism:
 ```
 
 A communication group file will also be generated. This must be passed into ASTRA-sim to define which gpus belong to each collective.
+
+Only the dense `transformer` model is wired through `synthesise_workload.py`
+today. The MoE classes in `Model/TransformerMoe.py` and
+`Layer/TransformerMoeLayer.py` are incomplete scaffolding.
 
 ## Implementing your own model
 
